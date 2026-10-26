@@ -79,9 +79,6 @@ describe("OpenCode Free Session ID Format", () => {
     }
   });
 
-  // Upstream decodes the prefix as ~(time * 0x1000 + counter): it answers 403
-  // FreeTierError for a large counter and 429 FreeUsageLimitError when the
-  // decoded clock is far from the request time, so both fields must stay real.
   function counterOf(id) {
     return Number(~BigInt(`0x${id.slice(4, 16)}`) & 0xfffn);
   }

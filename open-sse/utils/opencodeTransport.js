@@ -5,6 +5,13 @@ import { Readable } from "node:stream";
 import path from "node:path";
 import { OPENCODE_TRANSPORT_CONFIG } from "../config/runtimeConfig.js";
 import { normalizeString, resolveEffectiveProxyUrl } from "./proxyResolution.js";
+import { isSocksProxyUrl } from "./socksTunnel.js";
+
+const HTTP_PROXY_RE = /^https?:\/\//i;
+
+function isSupportedProxyUrl(proxyUrl) {
+  return HTTP_PROXY_RE.test(proxyUrl) || isSocksProxyUrl(proxyUrl);
+}
 
 const TRANSPORT_PATH = "/forward";
 const SIDECAR = path.join("scripts", "opencode-transport.mjs");
@@ -146,7 +153,7 @@ export async function fetchViaTransport(url, options = {}, proxyOptions = null) 
 
   const target = typeof url === "string" ? url : url.toString();
   const { url: proxyUrl } = resolveEffectiveProxyUrl(target, proxyOptions);
-  if (proxyUrl && !/^https?:\/\//i.test(proxyUrl)) return null;
+  if (proxyUrl && !isSupportedProxyUrl(proxyUrl)) return null;
 
   const transport = await ensure();
   if (!transport) return null;

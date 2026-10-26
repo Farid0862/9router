@@ -39,9 +39,6 @@ const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeSession";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-// chatCore falls back to `crypto.randomUUID() + Date.now()` for providerSessionId
-// when the downstream request carries no session hint. Treating that synthetic
-// seed as a real conversation hint gives every request its own upstream session.
 const SYNTHETIC_SESSION_SEED_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\d{13}$/i;
 
 function hasValidOpencodeVersion(ua) {
@@ -88,10 +85,6 @@ export function generateSessionId(timestamp = Date.now()) {
   return `ses_${descendingTimeHex(timestamp, counter)}${unstableRandom()}`;
 }
 
-// Upstream decodes the session prefix as a timestamp and rejects ids whose clock
-// is far from the request with a 429 FreeUsageLimitError. Mint translated ids from
-// the current clock, then cache per hint + rotation epoch so a conversation keeps
-// one session across turns instead of getting a fresh one every request.
 const translatedOpencodeSessions = new Map();
 const MAX_TRANSLATED_SESSIONS = 1000;
 
