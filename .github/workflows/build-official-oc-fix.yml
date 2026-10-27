@@ -1,0 +1,108 @@
+name: Build Official 9Router OpenCode Fix
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout official 9Router
+        uses: actions/checkout@v4
+        with:
+          repository: decolua/9router
+          ref: v0.5.111
+
+      - name: Apply runtime fix
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl -fsSL \
+            https://github.com/decolua/9router/pull/5182.diff \
+            -o /tmp/oc-fix.diff
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          raw = Path("/tmp/oc-fix.diff").read_text()
+          sections = re.split(
+              r'(?=^diff --git )', raw, flags=re.M
+          )
+
+          target = next(
+              (s for s in sections if s.startswith(
+                  "diff --git a/open-sse/services/lazyRuntime.js "
+              )), None
+          )
+
+          if not target:
+              raise SystemExit("Runtime patch not found")
+
+          Path("/tmp/runtime.patch").write_text(target)
+
+          dockerfile = Path("Dockerfile")
+          text = dockerfile.read_text()
+
+          build_marker = "RUN npm run build\n"
+          copy_marker = "RUN mkdir -p /app/data"
+
+          if (text.count(build_marker) != 1 or
+                  text.count(copy_marker) != 1):
+              raise SystemExit("Unexpected Dockerfile structure")
+
+          install = (
+              "RUN npm run build\n"
+              "RUN mkdir -p /opt/lazy-runtime && "
+              "cd /opt/lazy-runtime && "
+              "npm init -y >/dev/null && "
+              "npm install --no-save --no-audit --no-fund "
+              "'wreq-js@^3.2.0' "
+              "'playwright-core@^1.62.1'\n"
+          )
+
+          text = text.replace(build_marker, install, 1)
+          text = text.replace(
+              copy_marker,
+              "COPY --from=builder "
+              "/opt/lazy-runtime/node_modules/. "
+              "./node_modules/\n" + copy_marker,
+              1
+          )
+
+          dockerfile.write_text(text)
+          PY
+
+          git apply --check /tmp/runtime.patch
+          git apply /tmp/runtime.patch
+
+      - name: Set image name
+        id: image
+        shell: bash
+        run: |
+          echo "ref=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/9router:official-oc-fix" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image.outputs.ref }}
+          provenance: false
